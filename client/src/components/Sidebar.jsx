@@ -22,8 +22,8 @@ const Sidebar = ({ clients, roomId }) => {
 
   return (
     <div className="text-light h-full">
-      <div className="my-4">
-        <img src={Logo} alt="Logo" className="mx-auto h-10" />
+      <div className="my-4"  >
+      
       </div>
       <hr className="w-3/4 mx-auto" />
       <div className="h-8/12">
