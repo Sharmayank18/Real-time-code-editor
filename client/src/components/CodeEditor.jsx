@@ -14,103 +14,96 @@ const CodeEditor = ({ socketRef, roomId }) => {
   const isRemoteUpdate = useRef(false);
 
   useEffect(() => {
-    
-    const checkDevice = () => setIsDeviceMedium(window.innerWidth<768);
-    checkDevice();
-    window.addEventListener("resize",checkDevice)
-  
-    return () => {
-      window.removeEventListener("resize",checkDevice)
-    }
-  }, [])
-  
-
-  useEffect(() => {
     if (!socketRef.current) return;
-
+  
     const handleCodeChange = ({ code }) => {
-      const editor = editorRef.current;
-      if (!editor) return;
-
-      const currentCode = editor.getValue();
-      if (currentCode === code) return; // avoid unnecessary updates
-
-      // Save current cursor position
-      const selection = editor.getSelection();
-
-      // Prevent loop (if you're broadcasting change on `onChange`)
+      console.log("📥 Received code from server:", code?.substring(0, 50));
+      
+      // Update the value state
       isRemoteUpdate.current = true;
-
-      editor.setValue(code);
-
-      // Restore the cursor position (or at least try to be close)
-      if (selection) {
-        editor.setSelection(selection);
+      setValue(code);
+      
+      // Also update editor directly if it exists
+      if (editorRef.current) {
+        const currentCode = editorRef.current.getValue();
+        if (currentCode !== code) {
+          const position = editorRef.current.getPosition();
+          editorRef.current.setValue(code);
+          if (position) {
+            editorRef.current.setPosition(position);
+          }
+        }
       }
     };
-
-    const handleSyncData = ({ code, language }) => {
-      // console.log("Received sync-data:", { code, language });
+  
+    const handleSyncData = ({ code, language: syncedLanguage }) => {
+      console.log("🔄 Syncing initial data");
       if (code) {
         isRemoteUpdate.current = true;
-        editorRef.current?.setValue(code);
         setValue(code);
+        if (editorRef.current) {
+          editorRef.current.setValue(code);
+        }
       }
-      if (language) {
-        setLanguage(language);
+      if (syncedLanguage) {
+        setLanguage(syncedLanguage);
       }
     };
-
+  
+    const handleLanguageChange = ({ language: newLanguage }) => {
+      console.log("📥 Received language change:", newLanguage);
+      setLanguage(newLanguage);
+      setValue(CODE_SNIPPETS[newLanguage]);
+    };
+  
     socketRef.current.on("code-change", handleCodeChange);
-
-    // Handle language changes -
-
-    const handleLanguageChange = ({ language }) => {
-      // console.log('Recieved language-change: ',language);
-      setLanguage(language);
-      setValue(CODE_SNIPPETS[language]);
-    };
-
     socketRef.current.on("language-change", handleLanguageChange);
-
     socketRef.current.on("sync-code", handleSyncData);
-
+  
     return () => {
-      socketRef.current.off("code-change", handleCodeChange);
-      socketRef.current.off("language-change", handleLanguageChange);
-      socketRef.current.off("sync-code", handleSyncData);
+      if (socketRef.current) {
+        socketRef.current.off("code-change", handleCodeChange);
+        socketRef.current.off("language-change", handleLanguageChange);
+        socketRef.current.off("sync-code", handleSyncData);
+      }
     };
-  }, [socketRef.current]);
-
+  }, [socketRef]); // Added socketRef to dependencies
+  
   const onMount = (editor) => {
     editorRef.current = editor;
     editor.focus();
   };
 
-  const onLanguageChange = (language) => {
-    setLanguage(language);
-    setValue(CODE_SNIPPETS[language]);
-    // console.log("Emitting language change:",language);
-
-    socketRef.current.emit("language-change", {
-      roomId,
-      language,
-    });
+  const onLanguageChange = (newLanguage) => {
+    setLanguage(newLanguage);
+    setValue(CODE_SNIPPETS[newLanguage]);
+    
+    console.log("📤 Emitting language change:", newLanguage);
+    if (socketRef.current) {
+      socketRef.current.emit("language-change", {
+        roomId,
+        language: newLanguage,
+      });
+    }
   };
 
   const onCodeChange = (newValue) => {
+    // Skip if this change came from remote
     if (isRemoteUpdate.current) {
+      console.log("⏭️  Skipping remote update rebroadcast");
       isRemoteUpdate.current = false;
       return;
     }
 
+    console.log("📤 Emitting code change:", newValue?.substring(0, 50));
     setValue(newValue);
-    // console.log("Emitting code:", newValue);
-
-    socketRef.current?.emit("code-change", {
-      roomId,
-      code: newValue,
-    });
+    
+    if (socketRef.current && roomId) {
+      socketRef.current.emit("code-change", {
+        roomId,
+        code: newValue,
+      });
+    }
   };
 
   return (
@@ -121,8 +114,7 @@ const CodeEditor = ({ socketRef, roomId }) => {
           onLanguageChange={onLanguageChange}
         />
         <Editor
-          key={language}
-          height={isDeviceMedium?"60vh":"75vh"}
+          height={isDeviceMedium ? "60vh" : "75vh"}
           theme="vs-dark"
           language={language}
           value={value}

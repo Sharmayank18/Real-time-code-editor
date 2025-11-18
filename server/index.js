@@ -20,9 +20,9 @@ const server = http.createServer(app);
 const io = new Server(server, {
   cors: {
     origin: [
-      "http://localhost:5173",     // local react
-      "http://127.0.0.1:5173",     // optional local
-      "https://codesynced.vercel.app" // deployed react
+      "http://localhost:5173",
+      "http://127.0.0.1:5173",
+      "https://codesynced.vercel.app"
     ],
     methods: ["GET", "POST"],
     credentials: true,
@@ -50,12 +50,12 @@ io.on("connection", (socket) => {
 
     const clients = getAllConnectedClients(roomId);
 
-    // Send previous saved code & settings
+    // Send previous saved code & settings to the newly joined user
     if (roomData[roomId]) {
       socket.emit("sync-code", roomData[roomId]);
     }
 
-    // Notify everyone in the room
+    // Notify everyone in the room about the new user
     clients.forEach(({ socketId }) => {
       io.to(socketId).emit("joined", {
         clients,
@@ -65,35 +65,50 @@ io.on("connection", (socket) => {
     });
   });
 
+  // FIXED: Use socket.to() instead of io.to() to exclude sender
   socket.on("code-change", ({ roomId, code }) => {
+    // Save the code to room data
     roomData[roomId] = {
       ...(roomData[roomId] || {}),
       code,
     };
-
-    socket.in(roomId).emit("code-change", { code });
+  
+    // Broadcast to others in the room (excluding sender)
+    socket.to(roomId).emit("code-change", { code });
   });
-
+  
+  // FIXED: Use socket.to() instead of io.to() to exclude sender
   socket.on("language-change", ({ roomId, language }) => {
+    // Save the language to room data
     roomData[roomId] = {
       ...(roomData[roomId] || {}),
       language,
     };
-
-    socket.in(roomId).emit("language-change", { language });
+  
+    // Broadcast to others in the room (excluding sender)
+    socket.to(roomId).emit("language-change", { language });
   });
 
   socket.on("disconnecting", () => {
     const rooms = [...socket.rooms];
 
     rooms.forEach((roomId) => {
-      io.to(roomId).emit("disconnected", {
+      const clients = getAllConnectedClients(roomId);
+      
+      // Notify remaining users about the disconnection
+      socket.to(roomId).emit("disconnected", {
         socketId: socket.id,
         username: userSocketMap[socket.id],
+        clients: clients.filter(client => client.socketId !== socket.id),
       });
     });
 
     delete userSocketMap[socket.id];
+    socket.leave([...socket.rooms]);
+  });
+
+  socket.on("disconnect", () => {
+    console.log(`❌ User Disconnected: ${socket.id}`);
   });
 });
 
