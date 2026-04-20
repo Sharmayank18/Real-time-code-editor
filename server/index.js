@@ -2,10 +2,65 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
+const axios = require("axios");
 
 const app = express();
 
 app.use(cors());
+app.use(express.json());
+
+// Judge0 CE public instance language IDs
+const JUDGE0_LANG_IDS = {
+  javascript: 63,
+  typescript: 74,
+  python: 71,
+  java: 62,
+  csharp: 51,
+  php: 68,
+};
+
+const JUDGE0_URL = "https://ce.judge0.com";
+
+app.post("/execute", async (req, res) => {
+  const { sourceCode, language } = req.body;
+  const languageId = JUDGE0_LANG_IDS[language];
+
+  if (!languageId) {
+    return res.status(400).json({ error: `Unsupported language: ${language}` });
+  }
+
+  try {
+    // Step 1: Submit code
+    const { data: submission } = await axios.post(
+      `${JUDGE0_URL}/submissions?base64_encoded=false`,
+      { source_code: sourceCode, language_id: languageId },
+      { headers: { "Content-Type": "application/json" } }
+    );
+
+    const token = submission.token;
+
+    // Step 2: Poll for result
+    let result;
+    for (let i = 0; i < 10; i++) {
+      await new Promise((r) => setTimeout(r, 1000));
+      const { data } = await axios.get(
+        `${JUDGE0_URL}/submissions/${token}?base64_encoded=false`
+      );
+      if (data.status.id > 2) { // 1=In Queue, 2=Processing
+        result = data;
+        break;
+      }
+    }
+
+    if (!result) return res.status(504).json({ error: "Execution timed out" });
+
+    const output = result.stdout || result.stderr || result.compile_output || "No output";
+    const isError = !!(result.stderr || result.compile_output);
+    res.json({ output, isError });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 const PORT = process.env.PORT || 5001;
 const HOST = "0.0.0.0";

@@ -1,19 +1,8 @@
 import axios from "axios";
-import { LANGUAGE_VERSIONS } from "./constants";
 
-const API = axios.create({
-  baseURL: "https://emkc.org/api/v2/piston",
-});
+const SERVER_URL = import.meta.env.VITE_SERVER_URL || "http://localhost:5001";
 
 export const executeCode = async (sourceCode, language) => {
-  const res = await API.post("/execute", {
-    language: language,
-    version: LANGUAGE_VERSIONS[language],
-    files: [
-      {
-        content: sourceCode,
-      },
-    ],
-  });
-  return res.data;
+  const { data } = await axios.post(`${SERVER_URL}/execute`, { sourceCode, language });
+  return { run: { output: data.output, stderr: data.isError } };
 };
