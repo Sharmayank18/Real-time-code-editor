@@ -4,71 +4,51 @@ import LanguageSelector from "./LanguageSelector";
 import { CODE_SNIPPETS } from "../constants";
 import Output from "./Output";
 
-const CodeEditor = ({ socketRef, roomId }) => {
+const CodeEditor = ({ socketRef, roomId, socketReady }) => {
   const editorRef = useRef(null);
   const [value, setValue] = useState(CODE_SNIPPETS["javascript"]);
   const [language, setLanguage] = useState("javascript");
-  const [isDeviceMedium, setIsDeviceMedium] = useState(false);
-
-  // Prevent rebroadcast of remote code
   const isRemoteUpdate = useRef(false);
 
   useEffect(() => {
-    if (!socketRef.current) return;
-  
+    const socket = socketRef.current;
+    if (!socket) return;
+
     const handleCodeChange = ({ code }) => {
-      console.log("📥 Received code from server:", code?.substring(0, 50));
-      
-      // Update the value state
       isRemoteUpdate.current = true;
       setValue(code);
-      
-      // Also update editor directly if it exists
       if (editorRef.current) {
-        const currentCode = editorRef.current.getValue();
-        if (currentCode !== code) {
-          const position = editorRef.current.getPosition();
-          editorRef.current.setValue(code);
-          if (position) {
-            editorRef.current.setPosition(position);
-          }
-        }
+        const position = editorRef.current.getPosition();
+        editorRef.current.setValue(code);
+        if (position) editorRef.current.setPosition(position);
       }
     };
-  
+
     const handleSyncData = ({ code, language: syncedLanguage }) => {
-      console.log("🔄 Syncing initial data");
       if (code) {
         isRemoteUpdate.current = true;
         setValue(code);
-        if (editorRef.current) {
-          editorRef.current.setValue(code);
-        }
+        if (editorRef.current) editorRef.current.setValue(code);
       }
-      if (syncedLanguage) {
-        setLanguage(syncedLanguage);
-      }
+      if (syncedLanguage) setLanguage(syncedLanguage);
     };
-  
+
     const handleLanguageChange = ({ language: newLanguage }) => {
-      console.log("📥 Received language change:", newLanguage);
       setLanguage(newLanguage);
       setValue(CODE_SNIPPETS[newLanguage]);
     };
-  
-    socketRef.current.on("code-change", handleCodeChange);
-    socketRef.current.on("language-change", handleLanguageChange);
-    socketRef.current.on("sync-code", handleSyncData);
-  
+
+    socket.on("code-change", handleCodeChange);
+    socket.on("language-change", handleLanguageChange);
+    socket.on("sync-code", handleSyncData);
+
     return () => {
-      if (socketRef.current) {
-        socketRef.current.off("code-change", handleCodeChange);
-        socketRef.current.off("language-change", handleLanguageChange);
-        socketRef.current.off("sync-code", handleSyncData);
-      }
+      socket.off("code-change", handleCodeChange);
+      socket.off("language-change", handleLanguageChange);
+      socket.off("sync-code", handleSyncData);
     };
-  }, [socketRef]); // Added socketRef to dependencies
-  
+  }, [socketReady]);
+
   const onMount = (editor) => {
     editorRef.current = editor;
     editor.focus();
@@ -77,44 +57,28 @@ const CodeEditor = ({ socketRef, roomId }) => {
   const onLanguageChange = (newLanguage) => {
     setLanguage(newLanguage);
     setValue(CODE_SNIPPETS[newLanguage]);
-    
-    console.log("📤 Emitting language change:", newLanguage);
     if (socketRef.current) {
-      socketRef.current.emit("language-change", {
-        roomId,
-        language: newLanguage,
-      });
+      socketRef.current.emit("language-change", { roomId, language: newLanguage });
     }
   };
 
   const onCodeChange = (newValue) => {
-    // Skip if this change came from remote
     if (isRemoteUpdate.current) {
-      console.log("⏭️  Skipping remote update rebroadcast");
       isRemoteUpdate.current = false;
       return;
     }
-
-    console.log("📤 Emitting code change:", newValue?.substring(0, 50));
     setValue(newValue);
-    
     if (socketRef.current && roomId) {
-      socketRef.current.emit("code-change", {
-        roomId,
-        code: newValue,
-      });
+      socketRef.current.emit("code-change", { roomId, code: newValue });
     }
   };
 
   return (
     <div className="flex md:flex-row flex-col bg-darkBg">
       <div className="text-light md:w-1/2 w-full">
-        <LanguageSelector
-          language={language}
-          onLanguageChange={onLanguageChange}
-        />
+        <LanguageSelector language={language} onLanguageChange={onLanguageChange} />
         <Editor
-          height={isDeviceMedium ? "60vh" : "75vh"}
+          height="75vh"
           theme="vs-dark"
           language={language}
           value={value}

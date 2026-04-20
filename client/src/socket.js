@@ -1,14 +1,7 @@
 import { io } from "socket.io-client";
 
-export const initSocket = async () => {
-  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL;
-
-  if (!BACKEND_URL) {
-    throw new Error("❌ VITE_BACKEND_URL is missing in .env");
-  }
-
-  // Check backend health
-  await fetch(BACKEND_URL + "/ping", { cache: "no-store" });
+export const initSocket = () => {
+  const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || "http://localhost:5001";
 
   return io(BACKEND_URL, {
     transports: ["websocket"],
